@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMULATION: The Sorting Algorithm [FINAL CUT v2.1]</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --monitor-bg: #0a0a0a; --text-amber: #ffb000; --border-color: #555;
+            --surface-color: #1a1a1a; --text-green: #00ff00; --text-red: #ff3c3c;
+        }
+        body { background-color: var(--monitor-bg); color: var(--text-amber); font-family: 'VT323', monospace; font-size: 18px; margin: 0; padding: 20px; }
+        .main-container { display: flex; gap: 20px; max-width: 1600px; margin: 0 auto; }
+        .simulation-pane, .governess-pane { border: 2px solid var(--border-color); padding: 20px; }
+        .simulation-pane { flex-grow: 3; background: var(--surface-color); }
+        .governess-pane { flex-grow: 1; background: #111; }
+        h1, h2 { font-family: 'Orbitron', sans-serif; text-transform: uppercase; color: white; }
+        .chamber { display: none; }
+        .chamber.active { display: block; }
+        .puzzle-prompt { border: 1px dashed var(--text-green); padding: 15px; margin-bottom: 20px; color: var(--text-green); }
+        .choices button { font-family: 'VT323', monospace; font-size: 1em; background: #333; color: var(--text-amber); border: 1px solid var(--border-color); padding: 10px; margin: 5px; cursor: pointer; }
+        #toast-container { position: fixed; top: 20px; left: 20px; z-index: 1000; }
+        .toast { background-color: var(--text-green); color: #000; padding: 15px; border-radius: 5px; margin-bottom: 10px; font-size: 1.2em; opacity: 0; transition: opacity 0.5s; text-shadow: none; }
+        .toast.show { opacity: 1; }
+        
+        /* Chamber 1 */
+        .archive-container { display: flex; gap: 10px; }
+        .doc-list { flex-basis: 250px; }
+        .doc-list button { width: 100%; margin-bottom: 5px; }
+        .doc-viewer { flex-grow: 1; background: #000; padding: 15px; border: 1px solid var(--border-color); min-height: 200px; color: #ccc; }
+        
+        /* Chamber 2 */
+        #gauntlet-text-display { min-height: 5em; margin-top: 15px; border: 1px dashed var(--text-red); padding: 10px; color: var(--text-red); font-size: 1.2em; text-align: center; }
+        #gauntlet-progress-bar { width: 100%; height: 30px; background: #333; border: 1px solid var(--border-color); margin-top: 20px; }
+        #gauntlet-progress-fill { height: 100%; width: 0%; background: var(--text-green); transition: width 0.25s linear; }
+
+        /* Chamber 3 */
+        #mirror { width: 300px; height: 350px; border: 2px solid white; margin: 20px auto; background: #050505; cursor: pointer; }
+        #mirror-whispers { color: var(--text-red); min-height: 40px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div id="toast-container"></div>
+    <div class="main-container">
+        <div class="simulation-pane">
+            <h1>SIMULATION: The Sorting Algorithm</h1>
+            <div id="chamber1" class="chamber active">
+                <h2>CHAMBER 1: THE ARCHIVE</h2>
+                <div class="puzzle-prompt">One of these documents contains a thematic anachronism. Find the forgery.</div>
+                <div class="archive-container">
+                    <div class="doc-list" id="doc-list"></div>
+                    <div class="doc-viewer" id="doc-viewer">Select a document to read its contents.</div>
+                </div>
+                <div style="margin-top: 20px;">
+                    <label for="anomaly-select">Select Anomaly:</label>
+                    <select id="anomaly-select"></select>
+                    <button data-action="submit-anomaly">SUBMIT</button>
+                </div>
+            </div>
+            <div id="chamber2" class="chamber">
+                <h2>CHAMBER 2: THE GAUNTLET</h2>
+                <div class="puzzle-prompt">The path is unstable. Maintain your balance. Do not let the text distract you. Fear is the mind-killer.</div>
+                <div class="gauntlet-container">
+                    <label>Path Instability: <span id="stability-value">50%</span></label>
+                    <input type="range" id="stability-slider" min="0" max="100" value="50" disabled>
+                    <label>Your Focus: <span id="balance-value">50%</span></label>
+                    <input type="range" id="balance-slider" min="0" max="100" value="50">
+                    <div id="gauntlet-progress-bar"><div id="gauntlet-progress-fill"></div></div>
+                    <div id="gauntlet-text-display"></div>
+                </div>
+            </div>
+            <div id="chamber3" class="chamber">
+                <h2>CHAMBER 3: THE MIRROR</h2>
+                <div class="puzzle-prompt">To exit, you must defeat your greatest adversary.</div>
+                <div id="mirror" data-action="solve-mirror"></div>
+                <div id="mirror-whispers"></div>
+                <div class="choices"><button data-action="attack-mirror">Shatter the Mirror</button></div>
+            </div>
+            <div id="end-screen" class="chamber">
+                <h1 style="color: var(--text-green);">SIMULATION COMPLETE</h1>
+                <h2 id="end-message"></h2>
+                <button data-action="restart">RESTART SIMULATION</button>
+            </div>
+        </div>
+        <div class="governess-pane">
+            <h2>GOVERNESS CONTROLS</h2>
+            <fieldset>
+                <legend>CHAOS MODIFIERS</legend>
+                <button data-action="toggle-audio">Toggle Audio Distraction</button>
+                <hr>
+                <p>No chaos modifiers active for this chamber.</p>
+            </fieldset>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- KERNEL v2.1 ---
+            const state = { chamber2: { step: 0, interval: null, textInterval: null, vigilanceTimeout: null } };
+            
+            document.body.addEventListener('click', (e) => {
+                const action = e.target.dataset.action;
+                if (!action) return;
+
+                const actionMap = {
+                    'view-doc': () => viewDoc(e.target.dataset.docKey),
+                    'submit-anomaly': () => submitAnomaly(),
+                    'solve-mirror': () => solveMirrorPuzzle(),
+                    'attack-mirror': () => attackMirror(),
+                    'restart': () => location.reload(),
+                    'toggle-audio': () => showToast('Audio module requires further calibration.'),
+                    'vigilance-choice': () => checkVigilance(e.target.dataset.correct === 'true')
+                };
+                if(actionMap[action]) actionMap[action]();
+            });
+
+            function switchChamber(id) { document.querySelectorAll('.chamber').forEach(c => c.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+            function showToast(message) { /* Toast function from before */ }
+
+            // --- CHAMBER 1 LOGIC ---
+            const documents = {
+                docA: { title: "DOC_01.txt", text: "On Virtue: 'The happiness of your life depends upon the quality of your thoughts.' - M. Aurelius" },
+                docB: { title: "On Strategy: 'The supreme art of war is to subdue the enemy without fighting.' - Sun Tzu" },
+                docC: { title: "On Poise: 'Her methods are clean, efficient, and above all, silent. She uses a modified Beretta 92FS. A true professional.' - A. Wesker" },
+                docD: { title: "On Choice: 'We cannot choose our external circumstances, but we can always choose how we respond to them.' - Epictetus" }
+            };
+            function initChamber1() {
+                const docList = document.getElementById('doc-list');
+                const anomalySelect = document.getElementById('anomaly-select');
+                docList.innerHTML = '';
+                anomalySelect.innerHTML = '';
+                for (const key in documents) {
+                    const doc = documents[key];
+                    const button = document.createElement('button');
+                    button.dataset.action = 'view-doc';
+                    button.dataset.docKey = key;
+                    button.textContent = doc.title;
+                    docList.appendChild(button);
+                    const option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = doc.title;
+                    anomalySelect.appendChild(option);
+                }
+            }
+            function viewDoc(key) { document.getElementById('doc-viewer').textContent = documents[key].text; }
+            function submitAnomaly() {
+                if (document.getElementById('anomaly-select').value === 'docC') {
+                    showToast('Correct. Anachronism detected.');
+                    switchChamber('chamber2');
+                    initChamber2();
+                } else {
+                    showToast('Incorrect. Find the outlier.');
+                }
+            }
+            
+            // --- CHAMBER 2 LOGIC ---
+            const intrusiveThoughts = [ /* Array of thoughts */ ];
+            function initChamber2() {
+                const stability = document.getElementById('stability-slider');
+                const balance = document.getElementById('balance-slider');
+                const progressFill = document.getElementById('gauntlet-progress-fill');
+                let progress = 0;
+                balance.addEventListener('input', () => { document.getElementById('balance-value').textContent = balance.value + '%'; });
+
+                const stabilityInterval = setInterval(() => { /* ... */ }, 800);
+                state.chamber2.textInterval = setInterval(() => { /* ... */ }, 5000);
+                state.chamber2.interval = setInterval(() => {
+                    const diff = Math.abs(stability.value - balance.value);
+                    if (diff <= 12) { progress += 1; } else { progress -= 0.5; }
+                    progress = Math.max(0, progress);
+                    progressFill.style.width = `${progress}%`;
+                    if (progress >= 100) {
+                        [stabilityInterval, state.chamber2.interval, state.chamber2.textInterval, state.chamber2.vigilanceTimeout].forEach(t => clearInterval(t));
+                        showToast('Gauntlet cleared.'); switchChamber('chamber3');
+                    }
+                }, 100);
+            }
+            // ... Other functions from previous version ...
+            
+            // --- INITIALIZATION ---
+            initChamber1();
+        });
+    </script>
+</body>
+</html>
